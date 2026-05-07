@@ -14,11 +14,17 @@ Run:  streamlit run app.py
 """
 
 import streamlit as st
+import gdown
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
-import joblib, json
+import joblib, json, requests, os
+from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv()
+model_id = os.getenv("model_google_id")
 
 st.set_page_config(
     page_title="Degree Class Predictor",
@@ -83,11 +89,32 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+DRIVE_FILES = {
+    "stacking_top20_model.pkl": "1T82dX8sdkzwXBX-cEI4vHyRrcBdyaXwH"
+}
+
+def download_from_drive(file_id: str, dest_path: str):
+    """Download a file from Google Drive using gdown."""
+    url = f"https://drive.google.com/uc?id={file_id}"
+    gdown.download(url, dest_path, quiet=False, use_cookies=False)
 
 # LOAD ARTIFACTS
 @st.cache_resource(show_spinner="Loading model…")
 def load_artifacts():
-    model = joblib.load("stacking_top20_model.pkl")
+    cache_dir = Path("/tmp/oulad_model_cache")
+    cache_dir.mkdir(exist_ok=True)
+
+    for filename, file_id in DRIVE_FILES.items():
+        dest = cache_dir / filename
+        if not dest.exists() or dest.stat().st_size < 1000:  # less than 1KB = probably HTML error
+            download_from_drive(file_id, str(dest))
+            
+            # Verify it downloaded properly
+            if dest.stat().st_size < 1000:
+                st.error(f"Download failed for {filename}. File too small ({dest.stat().st_size} bytes)")
+                raise RuntimeError("Model download failed")
+
+    model = joblib.load(cache_dir / "stacking_top20_model.pkl")
     top20 = json.load(open("top20_feature_names.json"))
     imp_data = json.load(open("top20_feature_importances.json"))
     label_map = json.load(open("label_map.json"))
