@@ -1,15 +1,12 @@
 """
 ============================================================
 OULAD Degree Class Prediction System  —  Streamlit App
-Objective iv: Prototype for academic advisors
 ============================================================
 Prerequisites (run retrain_top20.py first):
   - stacking_top20_model.pkl
   - top20_feature_names.json
   - top20_feature_importances.json
   - label_map.json
-
-Run:  streamlit run app.py
 ============================================================
 """
 
