@@ -1,0 +1,1 @@
+streamlit run "\Users\Gabriel_Yashim\Documents\GitHub\Degree-Class-Prediction\streamlit_app.py"
