@@ -19,12 +19,9 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
-import joblib, json, requests, os
+import joblib, json
 from pathlib import Path
-from dotenv import load_dotenv
 
-load_dotenv()
-model_id = os.getenv("model_google_id")
 
 st.set_page_config(
     page_title="Degree Class Predictor",
