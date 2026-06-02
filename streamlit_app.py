@@ -83,9 +83,6 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-DRIVE_FILES = {
-    "stacking_top20_model.pkl": "1T82dX8sdkzwXBX-cEI4vHyRrcBdyaXwH"
-}
 
 # LOAD ARTIFACTS
 @st.cache_resource(show_spinner="Loading model…")
