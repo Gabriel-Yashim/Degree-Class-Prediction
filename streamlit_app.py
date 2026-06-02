@@ -196,7 +196,7 @@ FEAT_META = {
         1.0,
     ),
     "cgpa_proxy": (
-        "CGPA Proxy Score (UK Marks)",
+        "CGPA Proxy Score",
         "Weighted aggregate: 60% TMA average + 40% exam score (0-100 scale)",
         0.0,
         100.0,
