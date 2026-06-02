@@ -1,0 +1,22 @@
+[
+  "cgpa_proxy",
+  "cgpa",
+  "tma_weighted_avg",
+  "tma_mean",
+  "tma_min",
+  "tma_max",
+  "tma_std",
+  "total_sessions",
+  "active_days",
+  "studied_credits",
+  "clicks_early",
+  "clicks_late",
+  "total_clicks",
+  "tma_score_trend",
+  "exam_score",
+  "late_submission_rate",
+  "clicks_mid",
+  "avg_days_early",
+  "click_cv",
+  "is_female"
+]

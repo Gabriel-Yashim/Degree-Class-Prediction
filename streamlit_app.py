@@ -87,31 +87,13 @@ DRIVE_FILES = {
     "stacking_top20_model.pkl": "1T82dX8sdkzwXBX-cEI4vHyRrcBdyaXwH"
 }
 
-def download_from_drive(file_id: str, dest_path: str):
-    """Download a file from Google Drive using gdown."""
-    url = f"https://drive.google.com/uc?id={file_id}"
-    gdown.download(url, dest_path, quiet=False, use_cookies=False)
-
 # LOAD ARTIFACTS
 @st.cache_resource(show_spinner="Loading model…")
 def load_artifacts():
-    cache_dir = Path("/tmp/oulad_model_cache")
-    cache_dir.mkdir(exist_ok=True)
-
-    for filename, file_id in DRIVE_FILES.items():
-        dest = cache_dir / filename
-        if not dest.exists() or dest.stat().st_size < 1000:  # less than 1KB = probably HTML error
-            download_from_drive(file_id, str(dest))
-            
-            # Verify it downloaded properly
-            if dest.stat().st_size < 1000:
-                st.error(f"Download failed for {filename}. File too small ({dest.stat().st_size} bytes)")
-                raise RuntimeError("Model download failed")
-
-    model = joblib.load(cache_dir / "stacking_top20_model.pkl")
-    top20 = json.load(open("top20_feature_names.json"))
-    imp_data = json.load(open("top20_feature_importances.json"))
-    label_map = json.load(open("label_map.json"))
+    model = joblib.load("stacking_top20_degree_class_model.pkl")
+    top20 = json.load(open("top20_feature_names_degree_class.json"))
+    imp_data = json.load(open("top20_feature_importances_degree_class.json"))
+    label_map = json.load(open("label_map_degree_class.json"))
     importances = [d["importance"] for d in imp_data]
     return model, top20, importances, label_map
 
@@ -125,20 +107,39 @@ except FileNotFoundError as e:
 
 
 # CONSTANTS
-CLASS_ORDER = ["Withdrawn", "Fail", "Pass", "Distinction"]
+CLASS_ORDER = ["Pass", "Third Class", "Second Class Lower", "Second Class Upper", "First Class"]
+
 CLASS_COLOR = {
-    "Distinction": "#4e9af1",
-    "Pass": "#4ef18a",
-    "Fail": "#f14e4e",
-    "Withdrawn": "#f1c94e",
+    "First Class": "#4e9af1",
+    "Second Class Upper": "#4ef18a",
+    "Second Class Lower": "#f1c94e",
+    "Third Class": "#ff8c42",
+    "Pass": "#f14e4e",
 }
+
 CLASS_CARD = {
-    "Distinction": "card-distinction",
+    "First Class": "card-first",
+    "Second Class Upper": "card-second-upper",
+    "Second Class Lower": "card-second-lower",
+    "Third Class": "card-third",
     "Pass": "card-pass",
-    "Fail": "card-fail",
-    "Withdrawn": "card-withdrawn",
 }
-CLASS_EMOJI = {"Distinction": "🏆", "Pass": "✅", "Fail": "⚠️", "Withdrawn": "🚪"}
+
+CLASS_EMOJI = {
+    "First Class": "🥇",
+    "Second Class Upper": "🥈",
+    "Second Class Lower": "🥉",
+    "Third Class": "📜",
+    "Pass": "✅",
+}
+
+DEGREE_STYLES = {
+    "First Class": {"css": "first-class", "emoji": "🥇", "color": "#4e9af1"},
+    "Second Class Upper": {"css": "second-upper", "emoji": "🥈", "color": "#4ef18a"},
+    "Second Class Lower": {"css": "second-lower", "emoji": "🥉", "color": "#f1c94e"},
+    "Third Class": {"css": "third-class", "emoji": "📜", "color": "#ff8c42"},
+    "Pass": {"css": "pass-class", "emoji": "✅", "color": "#f14e4e"},
+}
 
 FEAT_META = {
     "clicks_late": (
@@ -198,8 +199,8 @@ FEAT_META = {
         1.0,
     ),
     "cgpa_proxy": (
-        "CGPA Proxy Score",
-        "Weighted aggregate: 60% TMA average + 40% exam score",
+        "CGPA Proxy Score (UK Marks)",
+        "Weighted aggregate: 60% TMA average + 40% exam score (0-100 scale)",
         0.0,
         100.0,
         60.0,
@@ -405,14 +406,40 @@ def make_widget(feat):
     )
 
 
+
 # PREDICTION
+def compute_cgpa(cgpa_proxy):
+    """Convert UK marks (0-100) to CGPA scale (1.00-5.00)."""
+    cgpa = round((cgpa_proxy / 100) * 4 + 1, 2)
+    return max(1.00, min(5.00, cgpa))
+
+
+def cgpa_to_degree_class(cgpa):
+    """Map CGPA to degree classification."""
+    if cgpa >= 4.50:
+        return "First Class"
+    elif cgpa >= 3.50:
+        return "Second Class Upper"
+    elif cgpa >= 2.40:
+        return "Second Class Lower"
+    elif cgpa >= 1.50:
+        return "Third Class"
+    else:
+        return "Pass"
+
+
 def run_prediction(inputs):
-    row = pd.DataFrame([inputs])[TOP20]
+    pred_inputs = inputs.copy()
+    
+    if "cgpa" not in pred_inputs:
+        pred_inputs["cgpa"] = compute_cgpa(pred_inputs.get("cgpa_proxy", 0))
+        
+    row = pd.DataFrame([pred_inputs])[TOP20]
     proba = model.predict_proba(row)[0]
     pred = int(np.argmax(proba))
     label = LABEL_MAP[str(pred)]
     conf = float(proba[pred])
-    probs = {LABEL_MAP[str(i)]: float(proba[i]) for i in range(4)}
+    probs = {LABEL_MAP[str(i)]: float(proba[i]) for i in range(len(proba))}
     return label, conf, probs
 
 
@@ -427,6 +454,7 @@ def get_flags(inputs, pred):
     es = inputs.get("exam_score", -1)
     pa = inputs.get("num_of_prev_attempts", 0)
     im = inputs.get("imd_band_numeric", 100)
+    cgpa = compute_cgpa(inputs.get("cgpa_proxy", 0))
 
     if tc < 200:
         flags.append(
@@ -488,7 +516,7 @@ def get_flags(inputs, pred):
         flags.append(
             (
                 "box-risk",
-                "🔴 <b>Low exam score detected.</b> Student is at high risk of failing the final assessment.",
+                "🔴 <b>Low exam score detected.</b> Student is at high risk of poor final outcome.",
             )
         )
     if pa >= 2:
@@ -505,11 +533,18 @@ def get_flags(inputs, pred):
                 "🟡 <b>Student from a highly deprived area (IMD &lt; 20%).</b> May benefit from bursary or pastoral referral.",
             )
         )
-    if pred in ("Fail", "Withdrawn"):
+    if pred in ("Pass", "Third Class"):
         flags.append(
             (
                 "box-risk",
-                "🔴 <b>Predicted outcome is at-risk.</b> Immediate academic advisor intervention is strongly recommended.",
+                f"🔴 <b>Predicted {pred}.</b> Immediate academic advisor intervention is strongly recommended.",
+            )
+        )
+    elif pred == "Second Class Lower":
+        flags.append(
+            (
+                "box-warn",
+                f"🟡 <b>Predicted {pred}.</b> Academic support recommended to improve outcomes.",
             )
         )
     return flags
@@ -517,7 +552,7 @@ def get_flags(inputs, pred):
 
 # CHARTS
 def prob_chart(probs):
-    fig, ax = plt.subplots(figsize=(6, 2.8))
+    fig, ax = plt.subplots(figsize=(6, 3.2))
     fig.patch.set_facecolor("#1a1d27")
     ax.set_facecolor("#1a1d27")
     labels = CLASS_ORDER
@@ -599,7 +634,7 @@ st.markdown(
     🎓 Degree Class Prediction System
   </div>
   <div style='font-size:1rem;color:#888;margin-top:5px;'>
-    Early identification of at-risk students &nbsp;·&nbsp;
+    CGPA-Based Degree Classification &nbsp;·&nbsp;
     Stacking Ensemble (RF + HGB + SVM → LR) &nbsp;·&nbsp; OULAD dataset
   </div>
 </div>
@@ -610,23 +645,23 @@ st.markdown(
 
 if not LOADED:
     st.error(f"""
-**Model files not found.** Run `retrain_top20.py` first to generate:
-`stacking_top20_model.pkl` · `top20_feature_names.json` ·
-`top20_feature_importances.json` · `label_map.json`
+**Model files not found.** Run `implementation_degree_class.py` first to generate:
+`stacking_top20_degree_class_model.pkl` · `top20_feature_names_degree_class.json` ·
+`top20_feature_importances_degree_class.json` · `label_map_degree_class.json`
 
 Missing file: `{ERR}`
 """)
     st.stop()
 
-#  Sidebar
+# Sidebar
 st.sidebar.markdown(
     '<div class="sec-hdr"> Model Performance (Test Set)</div>',
     unsafe_allow_html=True,
 )
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Accuracy", "~75%", help="Hold-out test set accuracy")
-c2.metric("Macro F1", "~0.706", help="Unweighted mean F1 across all 4 classes")
-c3.metric("ROC-AUC", "~0.927", help="One-vs-Rest macro AUC")
+c2.metric("Macro F1", "~0.70", help="Unweighted mean F1 across all 5 classes")
+c3.metric("ROC-AUC", "~0.92", help="One-vs-Rest macro AUC")
 c4.metric("Features", "20", help="Top-20 by Random Forest importance")
 
 with st.sidebar.expander(" About this model", expanded=False):
@@ -643,8 +678,11 @@ of each base learner's probability outputs.
 
 **Class imbalance:** SMOTE oversampling applied inside each CV fold.
 
-**Classes:**
-🏆 Distinction (≥70%) · ✅ Pass (60–69%) · ⚠️ Fail (40–59%) · 🚪 Withdrawn
+**CGPA Formula:** CGPA = (cgpa_proxy / 100) × 4 + 1
+
+**Degree Classes:**
+🥇 First Class (CGPA 4.50–5.00) · 🥈 Second Class Upper (3.50–4.49) ·
+🥉 Second Class Lower (2.40–3.49) · 📜 Third Class (1.50–2.39) · ✅ Pass (1.00–1.49)
     """)
 
 st.sidebar.markdown(
@@ -653,7 +691,7 @@ st.sidebar.markdown(
 )
 st.sidebar.pyplot(importance_chart(), use_container_width=True)
 
-#  Main columns 
+# Main columns
 left, right = st.columns([1.15, 1], gap="large")
 
 with left:
@@ -670,6 +708,7 @@ with left:
         st.markdown(f"**{group}**")
         for feat in in_top20:
             inputs[feat] = make_widget(feat)
+        
         st.markdown("---")
 
     predict_btn = st.button(
@@ -703,11 +742,26 @@ with right:
         )
 
     else:
+        cgpa = compute_cgpa(inputs.get("cgpa_proxy", 0))
+        cgpa_class = cgpa_to_degree_class(cgpa)
         pred, conf, probs = run_prediction(inputs)
         color = CLASS_COLOR[pred]
         emoji = CLASS_EMOJI[pred]
         card = CLASS_CARD[pred]
 
+        # CGPA Display Card
+        st.markdown(
+            f"""
+<div style="background:#1a1d27; border:1px solid #3a3d4d; border-radius:10px; padding:15px; margin-bottom:15px;">
+  <div style="font-size:0.85rem; color:#888;">Computed CGPA (1.00 - 5.00)</div>
+  <div style="font-size:1.8rem; font-weight:bold; color:{color};">{cgpa:.2f}</div>
+  <div style="font-size:0.9rem; color:#888; margin-top:5px;">Direct CGPA Classification: <span style="color:{color};">{cgpa_class}</span></div>
+</div>
+        """,
+            unsafe_allow_html=True,
+        )
+
+        # Prediction Result Card
         st.markdown(
             f"""
 <div class="result-card {card}">
@@ -759,13 +813,15 @@ with right:
         report_lines = [
             "OULAD Degree Class Prediction Report",
             "=" * 40,
-            f"Predicted Class  : {pred}",
-            f"Confidence       : {conf*100:.1f}%",
+            f"Computed CGPA      : {cgpa:.2f}",
+            f"CGPA Classification : {cgpa_class}",
+            f"Predicted Class    : {pred}",
+            f"Confidence         : {conf*100:.1f}%",
             "",
             "Class Probabilities:",
         ]
         for cls in CLASS_ORDER:
-            report_lines.append(f"  {cls:<14}: {probs[cls]*100:.1f}%")
+            report_lines.append(f"  {cls:<22}: {probs[cls]*100:.1f}%")
         report_lines += ["", "Advisory Flags:"]
         for _, msg in flags:
             clean = msg.replace("<b>", "").replace("</b>", "")
@@ -779,7 +835,7 @@ with right:
         st.download_button(
             label=" Download Prediction Report (.txt)",
             data="\n".join(report_lines),
-            file_name="degree_prediction_report.txt",
+            file_name="degree_class_prediction_report.txt",
             mime="text/plain",
             use_container_width=True,
         )
